@@ -20,7 +20,11 @@ exchange = ccxt.binance(config={
         'defaultType': 'future'  # Use 'future' for Binance Futures, '
 }})
 
-
 markets = exchange.load_markets() # Load market data to get the list of coins from Binance Futures
-tickers = exchange.fetch_tickers() # Fetch tickers for the BTC/USDT trading pair
-pprint.pprint(tickers) # Print the ticker information for the BTC/USDT trading pair
+tickers = exchange.fetch_tickers() # Fetch ticker data to get the current price of each coin
+BTC_usdc = tickers['BTC/USDC:USDC']
+
+balance = exchange.fetch_balance() # Fetch account balance to check available funds
+usdc_balance = balance['USDC']['free'] # Get the free USDC balance
+print(f"Current USDC Balance: {usdc_balance}")
+
