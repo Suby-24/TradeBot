@@ -2,8 +2,7 @@ import os
 import pprint
 from dotenv import load_dotenv
 import ccxt
-import pandas as pd
-import time
+
 
 
 # Class for connecting to Binance Futures API and fetching market data and account balance 

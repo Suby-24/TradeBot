@@ -1,4 +1,8 @@
 import Binance_link
+import pandas as pd
+import numpy as np
+#import matplotlib.pyplot as plt
+import time
 
 class BinanceData:
     def __init__(self, ticker):
@@ -6,8 +10,12 @@ class BinanceData:
         self.ticker = ticker # Store the ticker symbol for which to fetch data (e.g., 'BTC/USDC:USDC' for the BTC/USDC perpetual contract on Binance Futures)
     
     def check_open_signal(self, ohlcv):
-        
-        return ohlcv
+         df = pd.DataFrame(
+            ohlcv, columns = ["timestamp", "open", "high", "low", "close", "volume"]
+         )
+         df.to_csv('ohlcv_data_12.csv', index=True) # Save the OHLCV data to a CSV file for further analysis or record-keeping
+         #print(df)
+         return ohlcv
     
     def check_close_signal(self, ohlcv):
         # Process the OHLCV data as needed (e.g., convert timestamps, calculate indicators, etc.)
@@ -27,8 +35,8 @@ class BinanceData:
     def fetch_data(self):
         if self.binance_link.exchange.has['fetchOHLCV']: # Check if the exchange supports fetching OHLCV data
             position = [] # List to store outcome of processed OHLCV data for each timeframe whether it is 
-            ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='15m', limit = 100) # Fetch OHLCV data for the specified ticker and timeframe (e.g., 15 minutes)                     ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='30m', limit = 400)
-            ohlcv = self.check_close_signal(ohlcv) # Check for close signals based on the fetched OHLCV data
+            ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='12h', limit = 300) # Fetch OHLCV data for the specified ticker and timeframe (e.g., 15 minutes)                     ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='30m', limit = 400)
+            ohlcv = self.check_open_signal(ohlcv) # Check for close signals based on the fetched OHLCV data
             """
             ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='1h', limit = 300)
             ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='4h', limit = 200) # Fetch OHLCV data for the specified ticker and timeframe (e.g., 4 hours)
@@ -36,5 +44,6 @@ class BinanceData:
             ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='12h', limit = 100) # Fetch OHLCV data for the specified ticker and timeframe (e.g., 12 hours)
             ohlcv = self.binance_link.exchange.fetch_ohlcv(self.ticker, timeframe='1d', limit = 50) # Fetch OHLCV data for the specified ticker and timeframe (e.g., 1 day)
             """    
+
 
 
