@@ -32,6 +32,10 @@ class BinanceLink:
         usdc_balance = balance['USDC']['free'] # Get the free USDC balance
         return usdc_balance 
 
+    def get_current_price(self, ticker):
+        tickers = self.exchange.fetch_tickers() # Fetch ticker data to get the current price of each coin
+        current_price = tickers[ticker]['last'] # Get the last price of the specified ticker
+        return current_price
 
 
 
