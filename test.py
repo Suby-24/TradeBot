@@ -11,47 +11,56 @@ positive_volume = negative_volume = 0
 rise = True #indicate the trend of the price movement, True for rising, False for falling
 time_period = 10 # Time period for calculating the average volume
 
+temp = ohlcv.sort_values(by='close')
+p10 = temp['close'].quantile(0.10)
+p90 = temp['close'].quantile(0.90)
+
 def z_score(inflection_list, idx, open_price): # Calculate the z-score of the open price with respect to the list of inflection points
     if(len(inflection_list[-1]) == 0):
         inflection_list[-1] = [idx] # Create a new box with the idx as the first element
         return
-    elif(len(inflection_list[-1]) == 1): # If the list has only one box with one element, add the open price to the current box
-        inflection_list[-1].append(idx)
-        return
-    # Need to check the impact of the new point to the original list        
-    arr = np.array([ohlcv['open'].iloc[x] for x in inflection_list[-1]]) # Convert the list of inflection points to a numpy array
-    mean = np.mean(arr)
-    std = np.std(arr)
-
-    z = (open_price - mean) / std if std != 0 else 0
-
-    if(abs(z) > 2): # If the z-score is greater than 2, it is considered an outlier
-        inflection_list.append([idx]) # Create a new box with the idx as the first element
-    else:
-        inflection_list[-1].append(idx) # Add the open price to the current box
+    else: # If the list has only one box with one element, add the open price to the current box
+        temp = inflection_list[-1].copy()
+        #temp.append(idx)        
+        arr = np.array([ohlcv['open'].iloc[x] for x in temp]) # Convert the list of inflection points to a numpy array
         
-def DistanceBasedClustering(inflection_list, idx, open_price): # Perform distance-based clustering on the inflection points
-    if(len(inflection_list[-1]) == 0):
-        inflection_list[-1] = [idx] # Create a new box with the idx as the first element
-        return
-    elif(len(inflection_list[-1]) == 1): # If the list has only one box with one element, add the open price to the current box
-        inflection_list[-1].append(idx)
-        return
-    # Need to check the distance of the new point to the original list    
-    arr = np.array(inflection_list[-1])
-    
-    mean = np.mean(arr)
-    max_point = np.max(arr)
-    min_point = np.min(arr)
-    range = np.ptp(arr)
-    median = np.median(arr)
+        arr_max = max(arr)
+        arr_min = min(arr)
 
+        mean = np.mean(arr) 
+        std = np.std(arr)
+        z = (open_price - mean) / std if std != 0 else 0
+
+        dataset_normal_range = p90-p10
+        dataset_median = (p90+p10) / 2
+
+        sensitivity_factor = 0.1
+        dynamic_breakout_allowance = (dataset_normal_range / dataset_median) * sensitivity_factor
+
+        upper_pct_change = (open_price - arr_max) / arr_max if arr_max != 0 else 0
+        lower_pct_change = (arr_min - open_price) / arr_min if arr_min != 0 else 0
+
+
+        if(abs(z) > 2) or upper_pct_change > dynamic_breakout_allowance or lower_pct_change > dynamic_breakout_allowance: 
+            inflection_list.append([idx]) # Create a new box with the idx as the first element
+        else:
+            inflection_list[-1].append(idx) # Add the open price to the current box
+        
 def box_construction(inflection_list):
     arr = [sum([ohlcv['open'].iloc[x].item() for x in sub]) / len(sub) for sub in inflection_list]
-    arr.sort()
+    #arr.sort()
     result = []
-    lower_bound = 0.985 # For 15min
-    upper_bound = 1.015 # For 15min
+
+    # 2. Calculate the dynamic baseline percentage variance of this dataset
+    dataset_normal_range = p90 - p10
+    dataset_median = (p90 + p10) / 2
+    
+    # This represents the normal % fluctuation framework of this specific asset
+    base_percentage_variance = (dataset_normal_range / dataset_median) * 0.5
+    
+    # 3. Derive symmetrical dynamic bounds instead of hardcoded 0.99 and 1.11
+    lower_bound = 1.0 - base_percentage_variance
+    upper_bound = 1.0 + base_percentage_variance
 
     for i in arr:
         if not result:
@@ -66,7 +75,8 @@ def box_construction(inflection_list):
     return result
 
 def trend_analysis(ohlcv, trend, strength):
-    all_volumes = ohlcv['volume'].tolist()
+    trade_volume = ohlcv['volume']
+    all_volumes = trade_volume.tolist()
     threshold = np.percentile(all_volumes, 80)
 
     top_20_volume = {
@@ -106,28 +116,31 @@ def trend_analysis(ohlcv, trend, strength):
     else:
         print("Normal")
 
-
-def open_position(ohlcv, time_period, trend_lines, tail_up, tail_down):
+def volume_analysis(ohlcv):
     trade_volume = ohlcv['volume']
     total_trade_volume = sum(trade_volume) # Total trade volume
+
+
+def open_position(ohlcv, time_period, trend_lines, tail_up, tail_down):
+    total_trade_volume = 0 
     current_price = 80000
     trend = True # Positive Trend by default
     strength = 0.0 # Strength of dominance
     #current_price = get_current_price('BTC/USDC:USDC') # Get the urrent price of BTC/USDC perpetual contract on Binance Futures
+    
     temp = trend_lines.copy()
     temp.append(current_price)
     temp.sort()
     current_index = temp.index(current_price)
 
-    price_level = (current_price - trend_lines[current_index-1]) / (trend_lines[current_index+1] - trend_lines[current_index - 1]) # Price level between the two closest trend lines
+    #If current_index is out of range, 
+    if current_index - 1 < 0 or current_index+1 > len(temp):
+        price_level = temp[current_index]
+    else:
+        price_level = (current_price - temp[current_index-1]) / (temp[current_index+1] - temp[current_index - 1]) # Price level between the two closest trend lines
     
     trend_analysis(ohlcv, trend, strength)
 
-
-    #단순히 위치보고 롱/숏 잡는 거 넘어서 방향을 고려해야함. 최근 가장 많은 거래가 터진 캔들을 또는 이전 캔들이 어땠는지 확인 필요
-    #거래량이 많이 터진 캔들 파악하고 그 캔들이 속해있는 그룹도 확인
-    #고점에 가까운지 저점에 가까운지 확인하고 전 캔들들의 롱숏 비율도 확인 필요. 
-    
     if total_trade_volume < 3500: # Avg trade volume so expect moving sideways
         if price_level < 0.2: # Price is closer to the lower trend line so expect price to go up
             print("Open long position")
@@ -139,29 +152,23 @@ def open_position(ohlcv, time_period, trend_lines, tail_up, tail_down):
     else:
         pass
 
+    #단순히 위치보고 롱/숏 잡는 거 넘어서 방향을 고려해야함. 최근 가장 많은 거래가 터진 캔들을 또는 이전 캔들이 어땠는지 확인 필요
+    #거래량이 많이 터진 캔들 파악하고 그 캔들이 속해있는 그룹도 확인
+    #고점에 가까운지 저점에 가까운지 확인하고 전 캔들들의 롱숏 비율도 확인 필요. 
+    
 
 for i in range(len(ohlcv)):
     if(ohlcv['open'].iloc[i] < ohlcv['close'].iloc[i]): # Price is rising
-        tail_up[ohlcv['timestamp'].iloc[i]] = (ohlcv['low'].iloc[i] - ohlcv['open'].iloc[i])*0.4 + (ohlcv['volume'].iloc[i])*0.6 # Calculate the uptail
-        positive_volume += ohlcv['volume'].iloc[i]
         if rise == False:
             z_score(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
-            #DistanceBasedClustering(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
             rise = True
     elif (ohlcv['open'].iloc[i] > ohlcv['close'].iloc[i]): #Price is falling
-        tail_down[ohlcv['timestamp'].iloc[i]] = (ohlcv['high'].iloc[i] - ohlcv['open'].iloc[i])*0.4 + (ohlcv['volume'].iloc[i])*0.6 # Calculate the downtail
-        negative_volume += ohlcv['volume'].iloc[i]
         if rise == True:
             z_score(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
-            #DistanceBasedClustering(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
             rise = False
 
-tail_up_sorted = dict(sorted(tail_up.items(), key=lambda item: item[1], reverse=True)) # Sort the uptail dictionary by value in descending order
-tail_down_sorted = dict(sorted(tail_down.items(), key=lambda item: item[1], reverse=True)) # Sort the downtail dictionary by value in descending order
-
 trend_lines = box_construction(inflection_points) # Construct the trend lines based on the inflection points
+draw.plot_inflection_points(inflection_points, ohlcv, trend_lines)
 
-#draw.plot_inflection_points(inflection_points, ohlcv, trend_lines)
-
-open_position(ohlcv, time_period, trend_lines, tail_up_sorted, tail_down_sorted)
+#open_position(ohlcv, time_period, trend_lines, tail_up_sorted, tail_down_sorted)
 

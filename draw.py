@@ -65,3 +65,31 @@ def plot_inflection_points(inflection_list, ohlcv_df, horizontal_lines_list=None
     )
     
     fig.show()
+
+def plot_price_list(price_list):
+    """
+    Plots a simple, interactive line chart from a flat list of prices.
+    """
+    # Create the interactive chart
+    fig = go.Figure()
+    
+    # Add the price path line
+    fig.add_trace(go.Scatter(
+        x=list(range(len(price_list))),  # X-axis is just the index sequence (0, 1, 2...)
+        y=price_list,                    # Y-axis is your raw price data
+        mode='lines+markers',            # Combines the trend line with individual data points
+        name='Price',
+        line=dict(color='#2ecc71', width=2),
+        marker=dict(size=5, color='#34495e')
+    ))
+    
+    # Clean, distraction-free chart layout
+    fig.update_layout(
+        title='Suby Bot - Price Stream Visualization',
+        xaxis_title='Sequence Index',
+        yaxis_title='Price (USDT)',
+        template='plotly_white',
+        hovermode='x unified'            # Shows price clearly when hovering anywhere on the timeline
+    )
+    
+    fig.show()
