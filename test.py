@@ -40,38 +40,48 @@ def z_score(inflection_list, idx, open_price): # Calculate the z-score of the op
         upper_pct_change = (open_price - arr_max) / arr_max if arr_max != 0 else 0
         lower_pct_change = (arr_min - open_price) / arr_min if arr_min != 0 else 0
 
-
         if(abs(z) > 2) or upper_pct_change > dynamic_breakout_allowance or lower_pct_change > dynamic_breakout_allowance: 
             inflection_list.append([idx]) # Create a new box with the idx as the first element
         else:
             inflection_list[-1].append(idx) # Add the open price to the current box
-        
+
 def box_construction(inflection_list):
     arr = [sum([ohlcv['open'].iloc[x].item() for x in sub]) / len(sub) for sub in inflection_list]
-    #arr.sort()
     result = []
 
-    # 2. Calculate the dynamic baseline percentage variance of this dataset
+    sensitivity_factor = 0.45
+
+    # Calculate global dataset statistics
     dataset_normal_range = p90 - p10
     dataset_median = (p90 + p10) / 2
+    base_percentage_variance = (dataset_normal_range / dataset_median) * sensitivity_factor
     
-    # This represents the normal % fluctuation framework of this specific asset
-    base_percentage_variance = (dataset_normal_range / dataset_median) * 0.5
-    
-    # 3. Derive symmetrical dynamic bounds instead of hardcoded 0.99 and 1.11
-    lower_bound = 1.0 - base_percentage_variance
-    upper_bound = 1.0 + base_percentage_variance
+    # 1. Micro bounds for step-by-step changes
+    lower_bound_step = 1.0 - base_percentage_variance
+    upper_bound_step = 1.0 + base_percentage_variance
+
+    # 2. Macro bounds to catch gradual trend creep (e.g., maximum 1.5x the normal variance allowance)
+    max_creep_allowance = base_percentage_variance * 1.3
+    lower_bound_macro = 1.0 - max_creep_allowance
+    upper_bound_macro = 1.0 + max_creep_allowance
 
     for i in arr:
         if not result:
             result.append([i])
         else:
-            if result[-1][0] * lower_bound <= i <= result[-1][0] * upper_bound:
-                result[-1].append(i) # Add the new point to the current box if it is within 2% of the first element in the current box
+            # Check A: Is the immediate step acceptable?
+            step_ok = result[-1][-1] * lower_bound_step <= i <= result[-1][-1] * upper_bound_step
+            
+            # Check B: Has the gradual creep drifted too far from the origin of this box?
+            macro_ok = result[-1][0] * lower_bound_macro <= i <= result[-1][0] * upper_bound_macro
+            
+            # The point is only absorbed if it satisfies BOTH conditions
+            if step_ok and macro_ok:
+                result[-1].append(i) 
             else:
-                result.append([i]) # Create a new box with the new point as the first element 
+                result.append([i]) # Break out! Creates a clean, macro level boundary
     
-    result = [sorted(box, reverse=True)[0] for box in result] #Taking the max value 
+    result = [sorted(box, reverse=True)[0] for box in result] 
     return result
 
 def trend_analysis(ohlcv, trend, strength):
@@ -117,12 +127,16 @@ def trend_analysis(ohlcv, trend, strength):
         print("Normal")
 
 def volume_analysis(ohlcv):
-    trade_volume = ohlcv['volume']
-    total_trade_volume = sum(trade_volume) # Total trade volume
+    # Avg trade volume for past 8h
+    lookback = 32 #since I am using 15min candle 
 
+    total_trade_volume = ohlcv['volume'].iloc[-lookback:] # Total trade volume
 
-def open_position(ohlcv, time_period, trend_lines, tail_up, tail_down):
-    total_trade_volume = 0 
+    return sum(total_trade_volume)
+
+def open_position(ohlcv, time_period, trend_lines):
+    total_trade_volume = volume_analysis(ohlcv)
+    print(total_trade_volume)
     current_price = 80000
     trend = True # Positive Trend by default
     strength = 0.0 # Strength of dominance
@@ -140,35 +154,36 @@ def open_position(ohlcv, time_period, trend_lines, tail_up, tail_down):
         price_level = (current_price - temp[current_index-1]) / (temp[current_index+1] - temp[current_index - 1]) # Price level between the two closest trend lines
     
     trend_analysis(ohlcv, trend, strength)
+    print(price_level)
 
-    if total_trade_volume < 3500: # Avg trade volume so expect moving sideways
+    if total_trade_volume > 30000 and total_trade_volume < 75000: # Avg trade volume so expect moving sideways
         if price_level < 0.2: # Price is closer to the lower trend line so expect price to go up
             print("Open long position")
         elif price_level > 0.8: # Price is closer to the upper trend line so expect price to go down
             print("Open short position")
-    elif total_trade_volume >= 5000: # High trade volume so expect trend breakout
+    elif total_trade_volume >= 250000: # High trade volume so expect trend breakout
        if price_level < 0.5: # Price is closer to the lower trend line so expect price to go up
            pass
     else:
-        pass
+        print("Wait a minute")
 
     #단순히 위치보고 롱/숏 잡는 거 넘어서 방향을 고려해야함. 최근 가장 많은 거래가 터진 캔들을 또는 이전 캔들이 어땠는지 확인 필요
     #거래량이 많이 터진 캔들 파악하고 그 캔들이 속해있는 그룹도 확인
     #고점에 가까운지 저점에 가까운지 확인하고 전 캔들들의 롱숏 비율도 확인 필요. 
     
-
-for i in range(len(ohlcv)):
-    if(ohlcv['open'].iloc[i] < ohlcv['close'].iloc[i]): # Price is rising
-        if rise == False:
-            z_score(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
-            rise = True
-    elif (ohlcv['open'].iloc[i] > ohlcv['close'].iloc[i]): #Price is falling
-        if rise == True:
-            z_score(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
-            rise = False
+def inflection_point_calc(ohlcv, inflection_points):
+    for i in range(len(ohlcv)):
+        if(ohlcv['open'].iloc[i] < ohlcv['close'].iloc[i]): # Price is rising
+            if rise == False:
+                z_score(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
+                rise = True
+        elif (ohlcv['open'].iloc[i] > ohlcv['close'].iloc[i]): #Price is falling
+            if rise == True:
+                z_score(inflection_points, i, ohlcv['open'].iloc[i]) # Passing inflection points and open price
+                rise = False
 
 trend_lines = box_construction(inflection_points) # Construct the trend lines based on the inflection points
-draw.plot_inflection_points(inflection_points, ohlcv, trend_lines)
+#draw.plot_inflection_points(inflection_points, ohlcv, trend_lines)
 
-#open_position(ohlcv, time_period, trend_lines, tail_up_sorted, tail_down_sorted)
+open_position(ohlcv, time_period, trend_lines)
 

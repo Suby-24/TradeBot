@@ -3,8 +3,6 @@ import pprint
 from dotenv import load_dotenv
 import ccxt
 
-
-
 # Class for connecting to Binance Futures API and fetching market data and account balance 
 class BinanceLink:
     def __init__(self):
@@ -20,7 +18,13 @@ class BinanceLink:
             'options': {
                 'defaultType': 'future'  # Use 'future' for Binance Futures, '
         }})
-        markets = self.exchange.load_markets() # Load market data to get the list of coins from Binance Futures
+        try:
+            print("Syncing exchange market pairs...")
+            self.exchange.load_markets() 
+        except ccxt.AuthenticationError:
+            print("\n[CRITICAL] Binance rejected your credentials.")
+            print("Check if your keys have trailing spaces or if you're using Testnet keys on Live.")
+            raise  # Passes error back out safely
     
     def get_market_data(self,ticker):
         tickers = self.exchange.fetch_tickers() # Fetch ticker data to get the current price of each coin
